@@ -11,7 +11,7 @@ https://docs.python-requests.org/en/master/user/quickstart/#make-a-request
 
 http://127.0.0.1:5000/api/2019-01-01?base=USD&symbols=EUR
 
-Iterate over a range of 20 business days, and run the above request for each day.
+Iterate over a range of 20 days, and run the above request for each business day.
 
 4. Create a list of text values from each response. The text value is formatted as JSON. Do not parse the JSON. Just put each JSON response in the list.
 
