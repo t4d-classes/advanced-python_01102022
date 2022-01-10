@@ -38,5 +38,5 @@ if __name__ == "__main__":
     start_date = date(2020, 1, 1)
     end_date = date(2020, 2, 29)
 
-    for business_day in business_days_list(start_date, end_date):
+    for business_day in business_days(start_date, end_date):
         print(business_day)
