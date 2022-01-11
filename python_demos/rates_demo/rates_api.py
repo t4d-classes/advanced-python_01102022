@@ -20,7 +20,7 @@ def check() -> str:
 @app.route("/api/<rate_date>")
 def rates_by_date(rate_date: str) -> Response:
 
-    time.sleep(1)
+    # time.sleep(1)
     
     for rate in rates:
 
