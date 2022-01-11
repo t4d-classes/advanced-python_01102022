@@ -1,86 +1,68 @@
-""" rates api """
+""" get rates """
 
-from typing import Any
-import pathlib
-import csv
-import math
-from flask import Flask, jsonify, abort, request, Response
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
+import requests
 
-rates: list[dict[str,Any]] = []
+from rates_demo.business_days import business_days
 
-app = Flask(__name__)
+def get_rates() -> None:
+    """ get rates """
 
-@app.route("/check")
-def check() -> str:
-    """ health check route function """
-    return "READY"
+    start_date = date(2021, 1, 1)
+    end_date = start_date + timedelta(days=20)
 
-# http://localhost:3000/api/2021-04-08?base=USD&symbols=EUR,CAD,GBP
-@app.route("/api/<rate_date>")
-def rates_by_date(rate_date: str) -> Response:
+    rate_responses: list[str] = []
+
+    for business_day in business_days(start_date, end_date):
+
+        rate_url = "".join([
+            "http://127.0.0.1:5000/api/",
+            str(business_day),
+            "?base=USD&symbols=EUR"
+        ])
+
+        response = requests.get(rate_url)
+        rate_responses.append(response.text)
+
     
-    for rate in rates:
+    for rate_response in rate_responses:
+        print(rate_response)
 
-        if rate["Date"] == rate_date:
+def get_rate_task(business_day: date) -> str:
+    """ get rate from rates api """
 
-            base_country = request.args.get("base", "EUR")
+    rate_url = "".join([
+        "http://127.0.0.1:5000/api/",
+        str(business_day),
+        "?base=USD&symbols=EUR"
+    ])
 
-            if "symbols" in request.args:
-                country_symbols = request.args["symbols"].split(",")
-            else:
-                country_symbols = [col for col in rate if col != "Date"]
-
-            country_rates = {
-                country_code: country_rate / rate[base_country]
-                for (country_code, country_rate) in rate.items()
-                if country_code in country_symbols and
-                not math.isnan(country_rate)
-            }
-
-            return jsonify({
-                "date": rate["Date"],
-                "base": base_country,
-                "rates": country_rates
-            })
-
-    abort(404)
+    response = requests.get(rate_url)
+    return response.text
 
 
-def load_rates_history(rates_file_path: pathlib.Path) -> list[dict[str,Any]]:
-    """ load rates history """
+def get_rates_threaded() -> None:
+    """ get rates using threads """
 
-    rates_history: list[dict[str,Any]] = []
+    start_date = date(2021, 1, 1)
+    end_date = start_date + timedelta(days=20)
 
-    with open(rates_file_path) as rates_file:
+    rate_responses: list[str] = []
 
-        rates_file_csv = csv.DictReader(rates_file)
-
-        for rate_row in rates_file_csv:
-            rate_entry = { "Date": rate_row["Date"], "EUR": 1.0 }
-
-            for rate_col in rate_row:
-                if rate_col != "Date" and len(rate_col) > 0:
-                    if rate_row[rate_col] == "N/A":
-                        rate_entry[rate_col] = math.nan
-                    else:
-                        rate_entry[rate_col] = float(rate_row[rate_col])
-
-            rates_history.append(rate_entry)
+    with ThreadPoolExecutor() as executor:
+        rate_responses = list(executor.map(
+            get_rate_task,
+            [ business_day for business_day
+            in business_days(start_date, end_date) ]
+        ))
 
 
-    return rates_history
+    for rate_response in rate_responses:
+        print(rate_response)    
 
-
-def start_rates_api() -> None:
-    """ start rates api rest server """
-
-    global rates
-
-    rates_file_path = pathlib.Path("..", "data", "eurofxref-hist.csv")
-
-    rates = load_rates_history(rates_file_path)
-
-    app.run()
 
 if __name__ == "__main__":
-    start_rates_api()
+    # get_rates()
+    get_rates_threaded()
+    
