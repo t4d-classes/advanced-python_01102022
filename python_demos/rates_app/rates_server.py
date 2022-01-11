@@ -17,8 +17,8 @@ def command_start_server(server_process: Optional[mp.Process]) -> mp.Process:
     if server_process and server_process.is_alive():
         print("server is already running")
     else:
-        # step 1 - create a new process object 
-        # step 2 - start the new process object
+        server_process = mp.Process(target=rate_server)
+        server_process.start()
         print("server started")
 
     return server_process
@@ -37,6 +37,21 @@ def command_stop_server(
     server_process = None
 
     return server_process
+
+def command_server_status(server_process: Optional[mp.Process]) -> None:
+    """ check the running status of the server """
+
+    if server_process and server_process.is_alive():
+        print("server is running")
+    else:
+        print("server is stopped")
+
+
+def command_exit(server_process: Optional[mp.Process]) -> None:
+    """ stop the server process """
+
+    if server_process and server_process.is_alive():
+        server_process.terminate()
     
 
 def main() -> None:
@@ -54,18 +69,14 @@ def main() -> None:
                 server_process = command_start_server(server_process)
             elif command == "stop":
                 server_process = command_stop_server(server_process)
-            # step 3 - add a command named "status" that outputs to the
-            # console if the server is current running or not
-            # hint: follow the command function pattern used by the other
-            # commands
+            elif command == "status":
+                command_server_status(server_process)
             elif command == "exit":
-                # step 4 - terminate the "server_process" if the
-                # "server_process" is an object and is alive
+                command_exit(server_process)
                 break
 
     except KeyboardInterrupt:
-        # step 5 - terminate the "server_process" if the
-        # "server_process" is an object and is alive
+        command_exit(server_process)
         pass
 
     sys.exit(0)
