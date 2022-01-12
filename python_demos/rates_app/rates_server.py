@@ -6,13 +6,12 @@ import sys
 import socket
 import threading
 
-# Create "ClientConnectionThread" class that inherits from "Thread"
-
-# Each time a client connects, a new thread should be created with the
-# "ClientConnectionThread" class. The class is responsible for sending the
-# welcome message and interacting with the client, echoing messages
-
-# The server should support multiple clients at the same time
+# Use a multiprocessing shared "Value" object to track the count of
+# connected clients
+# increment the count when a client connects, and decrement the count when
+# a client disconnects
+# add a new server command named "count" that displays the count of
+# connected clients
 
 class ClientConnectionThread(threading.Thread):
     """ client connection thread """
@@ -23,7 +22,6 @@ class ClientConnectionThread(threading.Thread):
 
         threading.Thread.__init__(self)
         self.conn = conn
-
 
     def run(self) -> None:
 
@@ -36,12 +34,13 @@ class ClientConnectionThread(threading.Thread):
             self.conn.sendall(message)
 
 
+
 def rate_server(host: str, port: int) -> None:
     """rate server"""
 
     with socket.socket(
         socket.AF_INET, socket.SOCK_STREAM) as socket_server:
-
+        
         socket_server.bind( (host, port) )
         socket_server.listen()
 
@@ -50,7 +49,7 @@ def rate_server(host: str, port: int) -> None:
             conn, _ = socket_server.accept()
 
             client_con_thread = ClientConnectionThread(conn)
-            client_con_thread.start() 
+            client_con_thread.start()
 
 
 def command_start_server(
