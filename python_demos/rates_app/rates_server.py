@@ -4,6 +4,7 @@ from typing import Optional
 import multiprocessing as mp
 import sys
 import socket
+import threading
 
 # Create "ClientConnectionThread" class that inherits from "Thread"
 
@@ -12,6 +13,27 @@ import socket
 # welcome message and interacting with the client, echoing messages
 
 # The server should support multiple clients at the same time
+
+class ClientConnectionThread(threading.Thread):
+    """ client connection thread """
+
+    def __init__(
+        self,
+        conn: socket.socket) -> None:
+
+        threading.Thread.__init__(self)
+        self.conn = conn
+
+
+    def run(self) -> None:
+
+        self.conn.sendall(b"Connected to the Rate Server")
+
+        while True:
+            message = self.conn.recv(2048)
+            if not message:
+                break
+            self.conn.sendall(message)
 
 
 def rate_server(host: str, port: int) -> None:
@@ -23,13 +45,12 @@ def rate_server(host: str, port: int) -> None:
         socket_server.bind( (host, port) )
         socket_server.listen()
 
-        conn, _ = socket_server.accept()
-
-        conn.sendall(b"Connected to the Rate Server")
-
         while True:
-            message = conn.recv(2048).decode('UTF-8')
-            conn.sendall(message.encode('UTF-8'))    
+
+            conn, _ = socket_server.accept()
+
+            client_con_thread = ClientConnectionThread(conn)
+            client_con_thread.start() 
 
 
 def command_start_server(
