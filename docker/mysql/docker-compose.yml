@@ -1,0 +1,22 @@
+services:
+  mysql:
+    image: "mysql:8.0.27"
+    ports:
+      - "3306:3306"
+    volumes:
+      - "mydata:/var/lib/mysql"
+    environment:
+      MYSQL_ROOT_PASSWORD: "sql!DB123!"
+  phpmyadmin:
+    image: "phpmyadmin:5.1.1-apache"
+    restart: always
+    ports:
+      - 8090:80
+    environment:
+      - PMA_ARBITRARY=0
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+    links:
+      - mysql
+volumes:
+  mydata: {}
