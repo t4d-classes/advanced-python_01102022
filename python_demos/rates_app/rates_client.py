@@ -7,7 +7,7 @@ try:
     with socket.socket(
         socket.AF_INET, socket.SOCK_STREAM) as socket_client:
 
-        socket_client.connect( ('127.0.0.1', 5050) )
+        socket_client.connect( ('127.0.0.1', 5051) )
 
         welcome_message = socket_client.recv(2048)
 

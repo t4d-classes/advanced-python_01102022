@@ -1,11 +1,22 @@
 """ rate server module """
 
-from typing import Optional
+from typing import Optional, Any
 import multiprocessing as mp
 from multiprocessing.sharedctypes import Synchronized
 import sys
 import socket
 import threading
+import re
+import json
+import requests
+
+CLIENT_COMMAND_PARTS = [
+    r"^(?P<command>[A-Z]*)",
+    r"(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})",
+    r"(?P<symbol>[A-Z]{3})$"
+]
+
+client_command_regex = re.compile(" ".join(CLIENT_COMMAND_PARTS))
 
 # Add support for the following client command
 
@@ -52,10 +63,12 @@ class ClientConnectionThread(threading.Thread):
             self.conn.sendall(b"Connected to the Rate Server")
 
             while True:
-                message = self.conn.recv(2048)
-                if not message:
+                client_command_bytes = self.conn.recv(2048)
+                
+                if not client_command_bytes:
                     break
-                self.conn.sendall(message)
+
+                self.validate_client_command(client_command_bytes)
 
         except ConnectionAbortedError:
             ...
@@ -63,6 +76,48 @@ class ClientConnectionThread(threading.Thread):
         finally:
             with self.client_count.get_lock():
                 self.client_count.value -= 1
+
+
+    def validate_client_command(self, client_command_bytes: bytes) -> None:
+        """ validate the client command before processing """
+
+        client_command_str = client_command_bytes.decode('UTF-8')
+
+        client_command_match = client_command_regex.match(
+            client_command_str
+        )
+
+        if not client_command_match:
+            self.conn.sendall(b"Invalid Command Format")
+        else:
+            self.process_client_command(
+                client_command_match.groupdict()
+            )
+
+
+    def process_client_command(self, client_command: dict[str, Any]) -> None:
+        """ process client command """
+
+        if client_command["command"] == "GET":
+
+            url = "".join([
+                "http://127.0.0.1:5000/api/",
+                client_command["date"],
+                "?base=USD&symbols=",
+                client_command["symbol"]
+            ])
+
+            response = requests.get(url)
+
+            rate_data = json.loads(response.text)
+            #rate_data = response.json()
+
+            self.conn.sendall(
+                str(rate_data["rates"][client_command["symbol"]])
+                .encode('UTF-8'))
+
+        else:
+            self.conn.sendall(b"Invalid Command Name")
 
 
 def rate_server(host: str, port: int, client_count: Synchronized) -> None:
@@ -147,7 +202,7 @@ def main() -> None:
         server_process: Optional[mp.Process] = None
         
         host = "127.0.0.1"
-        port = 5050
+        port = 5051
 
         while True:
 
