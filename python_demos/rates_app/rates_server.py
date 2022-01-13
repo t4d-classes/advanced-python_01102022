@@ -11,19 +11,15 @@ import json
 import requests
 import mysql.connector
 from contextlib import closing
+import pathlib
+import yaml
 
-# Task 1
+def read_config() -> Any:
+    """ read config """
 
-# Upgrade the command format to support multiple currencies
+    with open(pathlib.Path("rates_app", "config", "rates_config.yaml")) as yaml_file:
+        return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 
-# GET 2019-01-03 EUR,GBP,CAD
-
-# Only retrieve from the REST those currencies which are not cached.
-
-# Bonus
-
-# Limit yourself to one currency per REST API request and consider using a
-# ThreadPool to load the currencies that are not in the cache.
 
 CLIENT_COMMAND_PARTS = [
     r"^(?P<command>[A-Z]*)",
@@ -39,11 +35,13 @@ class ClientConnectionThread(threading.Thread):
     def __init__(
         self,
         conn: socket.socket,
-        client_count: Synchronized) -> None:
+        client_count: Synchronized,
+        config: Any) -> None:
 
         threading.Thread.__init__(self)
         self.conn = conn
         self.client_count = client_count
+        self.config = config
 
     def run(self) -> None:
 
@@ -90,11 +88,11 @@ class ClientConnectionThread(threading.Thread):
         if client_command["command"] == "GET":
 
             with closing(mysql.connector.connect(
-                host="localhost",
-                port=3306,
-                user="root",
-                password="sql!DB123!",
-                database="app",
+                host=self.config["database"]["host"],
+                port=self.config["database"]["port"],
+                user=self.config["database"]["username"],
+                password=self.config["database"]["password"],
+                database=self.config["database"]["name"],
             )) as db:
 
                 sql = "select exchange_rate " \
@@ -150,7 +148,9 @@ class ClientConnectionThread(threading.Thread):
             self.conn.sendall(b"Invalid Command Name")
 
 
-def rate_server(host: str, port: int, client_count: Synchronized) -> None:
+def rate_server(
+  host: str, port: int,
+  client_count: Synchronized, config: Any) -> None:
     """rate server"""
 
     with socket.socket(
@@ -166,7 +166,7 @@ def rate_server(host: str, port: int, client_count: Synchronized) -> None:
             with client_count.get_lock():
                 client_count.value += 1
 
-            client_con_thread = ClientConnectionThread(conn, client_count)
+            client_con_thread = ClientConnectionThread(conn, client_count, config)
             client_con_thread.start()
 
 
@@ -174,14 +174,15 @@ def rate_server(host: str, port: int, client_count: Synchronized) -> None:
 
 def command_start_server(
     server_process: Optional[mp.Process],
-    host: str, port: int, client_count: Synchronized) -> mp.Process:
+    host: str, port: int, client_count: Synchronized,
+    config: Any) -> mp.Process:
     """ command start server """
 
     if server_process and server_process.is_alive():
         print("server is already running")
     else:
         server_process = mp.Process(
-            target=rate_server, args=(host, port, client_count))
+            target=rate_server, args=(host, port, client_count, config))
         server_process.start()
         print("server started")
 
@@ -217,14 +218,14 @@ def command_count(client_count: Synchronized) -> None:
 
     print(client_count.value)
 
-def command_clear() -> None:
+def command_clear(config) -> None:
 
     with closing(mysql.connector.connect(
-        host="localhost",
-        port=3306,
-        user="root",
-        password="sql!DB123!",
-        database="app",
+      host=config["database"]["host"],
+      port=config["database"]["port"],
+      user=config["database"]["username"],
+      password=config["database"]["password"],
+      database=config["database"]["name"],
     )) as db:
 
         with closing(db.cursor()) as cur:
@@ -245,11 +246,12 @@ def main() -> None:
     """Main Function"""
 
     try:
+        config = read_config()
         client_count: Synchronized = mp.Value('i', 0)
         server_process: Optional[mp.Process] = None
         
-        host = "127.0.0.1"
-        port = 5051
+        host = config["server"]["host"]
+        port = config["server"]["port"]
 
         while True:
 
@@ -257,7 +259,7 @@ def main() -> None:
 
             if command == "start":
                 server_process = command_start_server(
-                    server_process, host, port, client_count)
+                    server_process, host, port, client_count, config)
             elif command == "stop":
                 server_process = command_stop_server(server_process)
             elif command == "status":
@@ -265,7 +267,7 @@ def main() -> None:
             elif command == "count":
                 command_count(client_count)
             elif command == "clear":
-                command_clear()
+                command_clear(config)
             elif command == "exit":
                 command_exit(server_process)
                 break

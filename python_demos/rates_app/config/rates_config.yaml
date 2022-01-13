@@ -1,0 +1,9 @@
+server:
+  host: 127.0.0.1
+  port: 5050
+database:
+  host: localhost
+  port: 3306
+  name: app
+  username: root
+  password: sql!DB123!
