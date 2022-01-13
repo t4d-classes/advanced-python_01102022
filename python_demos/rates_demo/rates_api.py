@@ -16,6 +16,12 @@ def check() -> str:
     """ health check route function """
     return "READY"
 
+# Find Rate Data in Mongo Exercise
+
+# Load Mongo config from YAML file
+
+# Retrieve rate information from Mongo to fulfilled the REST API calls
+
 # http://localhost:3000/api/2021-04-08?base=USD&symbols=EUR,CAD,GBP
 @app.route("/api/<rate_date>")
 def rates_by_date(rate_date: str) -> Response:
