@@ -13,6 +13,8 @@ import mysql.connector
 from contextlib import closing
 import pathlib
 import yaml
+from decimal import Decimal
+from datetime import date, datetime
 
 def read_config() -> Any:
     """ read config """
@@ -21,13 +23,35 @@ def read_config() -> Any:
         return yaml.load(yaml_file, Loader=yaml.SafeLoader)
 
 
+def get_rate_from_api(closing_date: str, currency_symbol: str,
+                      currency_rates: list[tuple[date, str, Decimal]]) -> None:
+    """ get rate from api """
+
+    url = "".join([
+        "http://localhost:5000/api/",
+        closing_date,
+        "?base=USD&symbols=",
+        currency_symbol,
+    ])
+
+    rate_data = requests.get(url).json()
+
+    currency_rates.append(
+        (datetime.strptime(closing_date, "%Y-%m-%d"),
+         currency_symbol,
+         Decimal(str(rate_data["rates"][currency_symbol]))))
+
+
 CLIENT_COMMAND_PARTS = [
-    r"^(?P<command>[A-Z]*)",
-    r"(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})",
-    r"(?P<symbol>[A-Z]{3})$"
+    r"^(?P<command>[A-Z]*) ",
+    r"(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2}) ",
+    r"(?P<symbol>[A-Z,:;|]*)$"
 ]
 
-client_command_regex = re.compile(" ".join(CLIENT_COMMAND_PARTS))
+client_command_regex = re.compile("".join(CLIENT_COMMAND_PARTS))
+
+currency_symbols_regex = re.compile(r"[,:;|]")
+
 
 class ClientConnectionThread(threading.Thread):
     """ client connection thread """
@@ -95,54 +119,72 @@ class ClientConnectionThread(threading.Thread):
                 database=self.config["database"]["name"],
             )) as db:
 
-                sql = "select exchange_rate " \
+                currency_symbols = currency_symbols_regex.split(
+                    client_command["symbol"])
+
+                params = [client_command["date"]]
+                params.extend(currency_symbols)
+
+                placeholders = ",".join(["%s"] * len(currency_symbols))
+                
+                sql = "select currency_symbol, exchange_rate " \
                     "from rate " \
-                    "where closing_date = %s and currency_symbol = %s"
-            
-                params = (client_command["date"], client_command["symbol"]) # create tuple with one element
+                    f"where closing_date = %s and currency_symbol in ({placeholders})"
+
+                cached_currency_symbols: set[str] = set()
+
+                rate_responses = []
 
                 with closing(db.cursor(dictionary=True)) as cur:
-                
+
                     cur.execute(sql, params)
 
-                    rate = cur.fetchone()
+                    cached_rates = cur.fetchall()
 
-                    if rate:
-                        self.conn.sendall(str(rate["exchange_rate"])
-                            .encode('UTF-8'))
-                        return
+                    for cached_rate in cached_rates:
+                        cached_currency_symbols.add(cached_rate["currency_symbol"])
+                        rate_responses.append(
+                            f"{cached_rate['currency_symbol']}: {cached_rate['exchange_rate']}")
 
-                url = "".join([
-                    "http://127.0.0.1:5000/api/",
-                    client_command["date"],
-                    "?base=USD&symbols=",
-                    client_command["symbol"]
-                ])
-
-                response = requests.get(url)
-
-                rate_data = json.loads(response.text)
-                #rate_data = response.json()
-
-                exchange_rate = rate_data["rates"][client_command["symbol"]]
-
-                with closing(db.cursor()) as cur:
-
-                    sql = "insert into rate (closing_date, currency_symbol, " \
-                          "exchange_rate) values (%s, %s, %s)"
-
-                    insert_params = (
-                        client_command["date"],
-                        client_command["symbol"],
-                        exchange_rate)
                 
-                    cur.execute(sql, insert_params)
+                currency_rate_threads: list[threading.Thread] = []
+                currency_rates: list[tuple[date, str, Decimal]] = []
 
-                    db.commit()
+                for currency_symbol in currency_symbols:
+                    if currency_symbol not in cached_currency_symbols:
 
-                    self.conn.sendall(
-                        str(exchange_rate)
-                        .encode('UTF-8'))
+                        currency_rate_thread = threading.Thread(
+                            target=get_rate_from_api,
+                            args=(client_command["date"],
+                                  currency_symbol, currency_rates))
+
+                        currency_rate_thread.start()
+                        currency_rate_threads.append(currency_rate_thread)
+
+                for currency_rate_thread in currency_rate_threads:
+                    currency_rate_thread.join()
+
+                if len(currency_rates) > 0:
+
+                    with closing(db.cursor()) as cur:
+
+                        sql = " ".join([
+                            "insert into rate",
+                            "(closing_date, currency_symbol, exchange_rate)",
+                            "values",
+                            "(%s, %s, %s)",
+                        ])
+
+                        cur.executemany(sql, currency_rates)
+
+                        db.commit()
+
+                    for currency in currency_rates:
+                        rate_responses.append(
+                            f"{currency[1]}: {currency[2]}")
+
+                self.conn.sendall(
+                    "\n".join(rate_responses).encode("UTF-8"))
 
         else:
             self.conn.sendall(b"Invalid Command Name")
