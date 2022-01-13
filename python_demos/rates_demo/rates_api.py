@@ -49,6 +49,17 @@ def rates_by_date(rate_date: str) -> Response:
     abort(404)
 
 
+# Mongo Load Rates Data
+
+# 1. Create a new Python script that uses the logic of the `load_rates_history` function.
+
+# 2. Instead of populating an in-memory list of rates from the csv, use the csv
+# to populate the `rates` MongoDB collection. Prefer that you use the `insert_one`.
+
+# 3. Following the YAML example of Rates App, load the MongoDB connection info
+# from a YAML file
+
+
 def load_rates_history(rates_file_path: pathlib.Path) -> list[dict[str,Any]]:
     """ load rates history """
 
