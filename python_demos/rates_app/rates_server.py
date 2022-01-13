@@ -9,22 +9,21 @@ import threading
 import re
 import json
 import requests
+import mysql.connector
+from contextlib import closing
 
-# Task 1 - Cache Rate Results
+# Task 1
 
-# Upgrade the application to check the database for a given exchange rate
-# (date, currency)
+# Upgrade the command format to support multiple currencies
 
-# If the exchange rate was previously retrieved and stored in the
-# database (inside the rates table), then return it
+# GET 2019-01-03 EUR,GBP,CAD
 
-# If the exchange rate is not in the database, then download it, add it to
-# the database and return it
+# Only retrieve from the REST those currencies which are not cached.
 
-# Task 2 - Clear Rate Cache
+# Bonus
 
-# Add a command for clearing the rate cache from the server command
-# prompt. Name the command "clear".
+# Limit yourself to one currency per REST API request and consider using a
+# ThreadPool to load the currencies that are not in the cache.
 
 CLIENT_COMMAND_PARTS = [
     r"^(?P<command>[A-Z]*)",
@@ -90,21 +89,62 @@ class ClientConnectionThread(threading.Thread):
 
         if client_command["command"] == "GET":
 
-            url = "".join([
-                "http://127.0.0.1:5000/api/",
-                client_command["date"],
-                "?base=USD&symbols=",
-                client_command["symbol"]
-            ])
+            with closing(mysql.connector.connect(
+                host="localhost",
+                port=3306,
+                user="root",
+                password="sql!DB123!",
+                database="app",
+            )) as db:
 
-            response = requests.get(url)
+                sql = "select exchange_rate " \
+                    "from rate " \
+                    "where closing_date = %s and currency_symbol = %s"
+            
+                params = (client_command["date"], client_command["symbol"]) # create tuple with one element
 
-            rate_data = json.loads(response.text)
-            #rate_data = response.json()
+                with closing(db.cursor(dictionary=True)) as cur:
+                
+                    cur.execute(sql, params)
 
-            self.conn.sendall(
-                str(rate_data["rates"][client_command["symbol"]])
-                .encode('UTF-8'))
+                    rate = cur.fetchone()
+
+                    if rate:
+                        self.conn.sendall(str(rate["exchange_rate"])
+                            .encode('UTF-8'))
+                        return
+
+                url = "".join([
+                    "http://127.0.0.1:5000/api/",
+                    client_command["date"],
+                    "?base=USD&symbols=",
+                    client_command["symbol"]
+                ])
+
+                response = requests.get(url)
+
+                rate_data = json.loads(response.text)
+                #rate_data = response.json()
+
+                exchange_rate = rate_data["rates"][client_command["symbol"]]
+
+                with closing(db.cursor()) as cur:
+
+                    sql = "insert into rate (closing_date, currency_symbol, " \
+                          "exchange_rate) values (%s, %s, %s)"
+
+                    insert_params = (
+                        client_command["date"],
+                        client_command["symbol"],
+                        exchange_rate)
+                
+                    cur.execute(sql, insert_params)
+
+                    db.commit()
+
+                    self.conn.sendall(
+                        str(exchange_rate)
+                        .encode('UTF-8'))
 
         else:
             self.conn.sendall(b"Invalid Command Name")
@@ -177,6 +217,23 @@ def command_count(client_count: Synchronized) -> None:
 
     print(client_count.value)
 
+def command_clear() -> None:
+
+    with closing(mysql.connector.connect(
+        host="localhost",
+        port=3306,
+        user="root",
+        password="sql!DB123!",
+        database="app",
+    )) as db:
+
+        with closing(db.cursor()) as cur:
+
+            cur.execute("delete from rate")
+
+            db.commit()
+
+
 def command_exit(server_process: Optional[mp.Process]) -> None:
     """ exit the rates server app """
 
@@ -207,6 +264,8 @@ def main() -> None:
                 command_server_status(server_process)
             elif command == "count":
                 command_count(client_count)
+            elif command == "clear":
+                command_clear()
             elif command == "exit":
                 command_exit(server_process)
                 break
