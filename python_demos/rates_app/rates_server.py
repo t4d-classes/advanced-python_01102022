@@ -28,7 +28,7 @@ def get_rate_from_api(closing_date: str, currency_symbol: str,
     """ get rate from api """
 
     url = "".join([
-        "http://localhost:5000/api/",
+        "http://127.0.0.1:5000/api/",
         closing_date,
         "?base=USD&symbols=",
         currency_symbol,
